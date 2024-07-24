@@ -6,6 +6,7 @@ parser.add_argument('-R2', "--Fastq_R2", required=False, help="Read 2 fastq file
 parser.add_argument('-N', "--threadN", type=int, default=8, required=False, help="Number of threads.")
 parser.add_argument('-I', "--index", required=True,  help="BISCUIT index.")
 parser.add_argument('-R', "--reference", required=True,  help="Reference in FASTA format.")
+parser.add_argument("-rrbs", "--rrbs", help="whether it's RRBS data", action="store_true")
 parser.add_argument("-runQC", "--runQC", help="whether run QC script", action="store_true")
 parser.add_argument('-O',  "--outFolder", required=True, help="Output folder.")
 parser.add_argument('-tag',  "--tag", required=True, help="Output prefix.")
@@ -24,7 +25,10 @@ prefix_out = f'{args.outFolder}/{args.tag}'
 
 cmd = f'{biscuit} align -@ {args.threadN} {args.index} {args.Fastq_R1}'
 if args.Fastq_R2 is not None:
-	cmd += f' {args.Fastq_R2} | dupsifter {args.reference}'
+	if args.rrbs:
+		cmd += f' {args.Fastq_R2}'
+	else:
+		cmd += f' {args.Fastq_R2} | dupsifter {args.reference}'
 cmd += f' | samtools view -b -o {prefix_out}_dup.bam'
 print(cmd)
 os.system(cmd)
