@@ -17,7 +17,6 @@ args = parser.parse_args()
 def subprocess_wrap(cmd, debug):
     if debug:
         print(cmd)
-        return
     os.system(cmd)
 
 # bin
