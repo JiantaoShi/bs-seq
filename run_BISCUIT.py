@@ -12,13 +12,17 @@ parser.add_argument('-O',  "--outFolder", required=True, help="Output folder.")
 parser.add_argument('-tag',  "--tag", required=True, help="Output prefix.")
 args = parser.parse_args()
 
-import sys,os,glob,re, uuid
+import sys,os,glob,re, uuid, subprocess
 
 if not os.path.exists(args.outFolder):
     os.makedirs(args.outFolder)
 
 biscuit = '/sibcb1/bioinformatics/shijiantao/miniforge3/bin/biscuit'
-MethylDackel = '/sibcb3/bioinformatics3/shijiantao/miniforge3/bin/MethylDackel'
+
+def subprocess_wrap(cmd, debug):
+    if debug:
+        print(cmd)
+    os.system(cmd)
 
 # alignment and deduplication
 prefix_out = f'{args.outFolder}/{args.tag}'
@@ -28,39 +32,36 @@ if args.Fastq_R2 is not None:
 	if args.rrbs:
 		cmd += f' {args.Fastq_R2}'
 	else:
-		cmd += f' {args.Fastq_R2} | dupsifter {args.reference}'
+		cmd += f' {args.Fastq_R2} | /sibcb/program/bin/dupsifter {args.reference}'
 cmd += f' | samtools view -b -o {prefix_out}_dup.bam'
-print(cmd)
-os.system(cmd)
+subprocess_wrap(cmd, True)
 
 # sort
 bam_out = f'{prefix_out}.bam'
-cmd = f'samtools sort -@ {args.threadN} -o {bam_out} {prefix_out}_dup.bam'
-print(cmd)
-os.system(cmd)
+cmd = f'samtools sort -@ {args.threadN} -o {bam_out} {prefix_out}_dup.bam && samtools index {bam_out}'
+subprocess_wrap(cmd, True)
 
 # QC
 if args.runQC:
-	cmd = '/sibcb1/bioinformatics/shijiantao/miniforge3/bin/biscuit qc'
-	cmd += f' {args.reference} {bam_out} {prefix_out}'
-	print(cmd)
-	os.system(cmd)
+	cmd = f'{biscuit} qc {args.reference} {bam_out} {prefix_out}'
+	subprocess_wrap(cmd, True)
 
 # Extract methylation
-mCall = args.outFolder + '/mCall/'
-if not os.path.exists(mCall):
-    os.makedirs(mCall)
-opref = mCall + args.tag
-cmd = f'{MethylDackel} extract {args.reference} {bam_out} --mergeContext --opref {opref}'
-print(cmd)
-os.system(cmd)
-cmd = f'{MethylDackel} extract {args.reference} {bam_out} --opref {opref} --CHG'
-print(cmd)
-os.system(cmd)
-cmd = f'{MethylDackel} extract {args.reference} {bam_out} --opref {opref} --CHH'
-print(cmd)
-os.system(cmd)
+mCall = args.outFolder + '/mCall'
+os.makedirs(mCall)
+prefix_mCall = f'{mCall}/{args.tag}'
+## pilepu
+cmd = f'{biscuit} pileup -@ {args.threadN} -o {prefix_mCall}.vcf {args.reference} {bam_out}'
+subprocess_wrap(cmd, True)
+## index pilepu
+cmd = f'bgzip -@ {args.threadN} {prefix_mCall}.vcf && tabix -p vcf {prefix_mCall}.vcf.gz'
+subprocess_wrap(cmd, True)
+## methylation call
+cmd = f'{biscuit} vcf2bed -k 1 -t cg {prefix_mCall}.vcf.gz | {biscuit} mergecg -c {args.reference} -'
+cmd += " | awk -v OFS='\t' '{ print $1, $2+1, $3-1, $4, $5, $6 }' >"
+cmd += f' {prefix_mCall}_CpG.cov'
+subprocess_wrap(cmd, True)
 
 # clean
-cmd = f'rm {prefix_out}_dup.bam'
-os.system(cmd)
+cmd = f'gzip {prefix_mCall}_CpG.cov && rm {prefix_out}_dup.bam'
+subprocess_wrap(cmd, True)
